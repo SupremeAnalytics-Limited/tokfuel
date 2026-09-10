@@ -18,6 +18,6 @@ describe("TokFuel gifting product contract", () => {
     expect(home).toContain("creator gift");
     expect(home).toContain("Who are you gifting?");
     expect(services).toContain("Pick a way to show love");
-    expect(services).toContain("Gift now");
+    expect(services).toContain("Choose gift");
   });
 });
