@@ -7,6 +7,8 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { isPaystackWebhookValid } from "../paystack";
+import { verifyAndFulfilPurchase } from "../payment-flow";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -50,6 +52,24 @@ async function startServer() {
       return;
     }
     next();
+  });
+
+  app.post("/api/paystack/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {}));
+    if (!isPaystackWebhookValid(rawBody, req.header("x-paystack-signature"))) {
+      res.sendStatus(401);
+      return;
+    }
+    try {
+      const event = JSON.parse(rawBody.toString("utf8"));
+      if (event?.event === "charge.success" && event?.data?.reference) {
+        await verifyAndFulfilPurchase(String(event.data.reference));
+      }
+      res.sendStatus(200);
+    } catch (error) {
+      console.error("[Paystack webhook] processing failed", error);
+      res.sendStatus(500);
+    }
   });
 
   app.use(express.json({ limit: "50mb" }));

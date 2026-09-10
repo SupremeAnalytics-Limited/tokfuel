@@ -20,4 +20,23 @@ describe("TokFuel gifting product contract", () => {
     expect(services).toContain("Pick a way to show love");
     expect(services).toContain("Choose gift");
   });
+
+  it("does not route checkout to the wallet dead-end and keeps the wallet refund-only", () => {
+    const checkout = fs.readFileSync(path.join(appRoot, "app/(tabs)/gift-checkout.tsx"), "utf8");
+    const wallet = fs.readFileSync(path.join(appRoot, "app/(tabs)/orders.tsx"), "utf8");
+    expect(checkout).toContain("Pay securely with Paystack");
+    expect(checkout).toContain("payments.initialize");
+    expect(checkout).not.toContain('onPress={() => router.push("/(tabs)/orders")}');
+    expect(wallet).toContain("Refund balance");
+    expect(wallet).toContain("no add-money or deposit feature");
+  });
+
+  it("uses haptic controls for gift cards and category-specific routing", () => {
+    const home = fs.readFileSync(path.join(appRoot, "app/(tabs)/index.tsx"), "utf8");
+    const services = fs.readFileSync(path.join(appRoot, "app/(tabs)/services.tsx"), "utf8");
+    expect(home).toContain("HapticPressable");
+    expect(home).toContain('params: { category: service.category }');
+    expect(services).toContain("useLocalSearchParams");
+    expect(services).toContain("gift.category === category");
+  });
 });

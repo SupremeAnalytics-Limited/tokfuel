@@ -5,6 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { applyTokFuelMarkup, sociallyClient } from "./socially";
+import { getRefundWallet, initializePurchase, verifyAndFulfilPurchase } from "./payment-flow";
 
 const giftQuantitySchema = z.number().int().min(500).refine((value) => value % 500 === 0, "Gift quantity must increase in 500-unit steps");
 
@@ -35,17 +36,31 @@ function toPublicGift(service: Awaited<ReturnType<typeof sociallyClient.getServi
   const productKey = categoryValue.includes("follower") ? "followers" : categoryValue.includes("like") ? "likes" : categoryValue.includes("view") ? "views" : categoryValue.includes("stream") ? "streams" : "other";
   const customerRatePerThousand = Math.max(applyTokFuelMarkup(service.rate), CUSTOMER_RATE_FLOORS[productKey] ?? 0);
   const customerCategory = productKey === "followers" ? "TikTok Followers" : productKey === "likes" ? "TikTok Likes" : productKey === "views" ? "TikTok Views" : productKey === "streams" ? "TikTok Streams" : "TikTok Gifts";
+  const tierLabel = service.refill ? "Refill available" : "Standard delivery";
+  const deliveryLabel = service.average_time ? `Typical start: ${service.average_time}` : "Typical start time varies";
   return {
     giftId: String(service.service),
-    title: customerCategory,
+    title: `${customerCategory} · ${tierLabel}`,
     category: customerCategory,
-    description: productKey === "views" ? "Help a creator get discovered by more viewers." : productKey === "followers" ? "Show lasting support for a creator's community." : productKey === "likes" ? "Add encouragement to a creator's latest post." : productKey === "streams" ? "Support a creator's live moment." : normalizedCategory || "TikTok creator gift",
+    description: `${productKey === "views" ? "Help a creator get discovered by more viewers." : productKey === "followers" ? "Show lasting support for a creator's community." : productKey === "likes" ? "Add encouragement to a creator's latest post." : productKey === "streams" ? "Support a creator's live moment." : normalizedCategory || "TikTok creator gift"} ${deliveryLabel} · ${tierLabel}.`,
     customerRatePerThousand,
     minQuantity: Math.max(500, Math.ceil(service.min / 500) * 500),
     maxQuantity: Math.floor(service.max / 500) * 500,
     refillAvailable: service.refill,
     averageTime: service.average_time,
   };
+}
+
+function toPublicGiftCatalog(services: Awaited<ReturnType<typeof sociallyClient.getServices>>): PublicGiftService[] {
+  const byTier = new Map<string, PublicGiftService>();
+  for (const service of services) {
+    const gift = toPublicGift(service);
+    const tier = gift.title.includes("Refill available") ? "refill" : "standard";
+    const key = `${gift.category}:${tier}`;
+    const existing = byTier.get(key);
+    if (!existing || gift.customerRatePerThousand < existing.customerRatePerThousand) byTier.set(key, gift);
+  }
+  return Array.from(byTier.values());
 }
 
 export const appRouter = router({
@@ -65,7 +80,7 @@ export const appRouter = router({
     getServices: publicProcedure.query(async () => {
       try {
         const services = await sociallyClient.getServices();
-        return services.map(toPublicGift);
+        return toPublicGiftCatalog(services);
       } catch (error) {
         throw new TRPCError({ code: "BAD_GATEWAY", message: "Live TikTok gifts are temporarily unavailable" });
       }
@@ -134,6 +149,20 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_GATEWAY", message: "Live gift status is temporarily unavailable" });
         }
       }),
+  }),
+
+  payments: router({
+    initialize: publicProcedure
+      .input(z.object({ email: z.string().email(), giftId: z.string(), link: z.string().url(), quantity: giftQuantitySchema, callbackUrl: z.string().url() }))
+      .mutation(({ input }) => initializePurchase(input)),
+
+    verify: publicProcedure
+      .input(z.object({ reference: z.string().min(8) }))
+      .mutation(({ input }) => verifyAndFulfilPurchase(input.reference)),
+
+    wallet: publicProcedure
+      .input(z.object({ email: z.string().email() }))
+      .query(({ input }) => getRefundWallet(input.email)),
   }),
 });
 

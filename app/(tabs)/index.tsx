@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { HapticPressable } from "@/components/haptic-pressable";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 
@@ -45,13 +46,13 @@ export default function HomeScreen() {
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Gift categories</Text><Pressable onPress={() => router.push("/(tabs)/services")}><Text style={styles.viewAll}>See all</Text></Pressable></View>
         <View style={styles.quickGrid}>
           {servicesQuery.isLoading && <Text style={styles.liveState}>Loading live TikTok services…</Text>}
-          {servicesQuery.isError && <Text style={styles.liveError}>Live Socially.ng services are unavailable right now.</Text>}
+          {servicesQuery.isError && <Text style={styles.liveError}>Live gift options are unavailable right now.</Text>}
           {quickServices.map((service) => {
-            return <Pressable key={service.giftId} style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]} onPress={() => router.push("/(tabs)/services")}>
+            return <HapticPressable key={service.giftId} style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]} onPress={() => router.push({ pathname: "/(tabs)/services", params: { category: service.category } })}>
               <View style={[styles.serviceIcon, { backgroundColor: service.category.includes("Followers") ? "#FE2C5520" : service.category.includes("Likes") ? "#FF739320" : service.category.includes("Views") ? "#25F4EE20" : "#A98CFF20" }]}><Ionicons name={service.category.includes("Followers") ? "people-outline" : service.category.includes("Likes") ? "heart-outline" : service.category.includes("Views") ? "play-outline" : "radio-outline"} size={22} color={service.category.includes("Followers") ? "#FE2C55" : service.category.includes("Likes") ? "#FF7393" : service.category.includes("Views") ? "#25F4EE" : "#A98CFF"} /></View>
               <Text style={styles.serviceLabel}>{service.title}</Text>
               <Text style={styles.servicePrice}>₦{service.customerRatePerThousand.toLocaleString("en-NG", { minimumFractionDigits: 2 })} / 1k</Text>
-            </Pressable>
+            </HapticPressable>
           })}
         </View>
 
@@ -62,7 +63,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Recent gifts</Text><Pressable onPress={() => router.push("/(tabs)/orders")}><Text style={styles.viewAll}>View all</Text></Pressable></View>
-        <View style={styles.orderCard}><View style={[styles.orderIcon, { backgroundColor: "#25F4EE18" }]}><Ionicons name="cloud-download-outline" color="#25F4EE" size={21} /></View><View style={styles.orderInfo}><Text style={styles.orderTitle}>Live orders appear here</Text><Text style={styles.orderSubtitle}>After you send a service gift through Socially.ng.</Text></View></View>
+        <View style={styles.orderCard}><View style={[styles.orderIcon, { backgroundColor: "#25F4EE18" }]}><Ionicons name="cloud-download-outline" color="#25F4EE" size={21} /></View><View style={styles.orderInfo}><Text style={styles.orderTitle}>Live orders appear here</Text><Text style={styles.orderSubtitle}>After you send a gift through TokFuel.</Text></View></View>
         <View style={styles.trustRow}><Ionicons name="shield-checkmark-outline" size={16} color="#31D158" /><Text style={styles.trustText}>Transparent gift cards · Secure checkout · Delivery tracking</Text></View>
       </ScrollView>
     </ScreenContainer>
