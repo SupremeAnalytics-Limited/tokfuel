@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -12,7 +12,11 @@ export default function HomeScreen() {
   const colors = useColors();
   const [link, setLink] = useState("");
   const servicesQuery = trpc.smm.getServices.useQuery();
-  const quickServices = (servicesQuery.data ?? []).slice(0, 4);
+  const featuredCategories = ["TikTok Followers", "TikTok Likes", "TikTok Views", "TikTok Streams"];
+  const quickServices = featuredCategories.map((category) => {
+    const matches = (servicesQuery.data ?? []).filter((service) => service.category === category);
+    return matches.reduce<typeof matches[number] | undefined>((cheapest, service) => !cheapest || service.customerRatePerThousand < cheapest.customerRatePerThousand ? service : cheapest, undefined);
+  }).filter((service): service is NonNullable<typeof service> => Boolean(service));
 
   return (
     <ScreenContainer className="px-5" containerClassName="bg-background">
@@ -44,7 +48,7 @@ export default function HomeScreen() {
           {servicesQuery.isError && <Text style={styles.liveError}>Live Socially.ng services are unavailable right now.</Text>}
           {quickServices.map((service) => {
             return <Pressable key={service.giftId} style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]} onPress={() => router.push("/(tabs)/services")}>
-              <View style={[styles.serviceIcon, { backgroundColor: "#25F4EE20" }]}><Ionicons name="gift-outline" size={22} color="#25F4EE" /></View>
+              <View style={[styles.serviceIcon, { backgroundColor: service.category.includes("Followers") ? "#FE2C5520" : service.category.includes("Likes") ? "#FF739320" : service.category.includes("Views") ? "#25F4EE20" : "#A98CFF20" }]}><Ionicons name={service.category.includes("Followers") ? "people-outline" : service.category.includes("Likes") ? "heart-outline" : service.category.includes("Views") ? "play-outline" : "radio-outline"} size={22} color={service.category.includes("Followers") ? "#FE2C55" : service.category.includes("Likes") ? "#FF7393" : service.category.includes("Views") ? "#25F4EE" : "#A98CFF"} /></View>
               <Text style={styles.serviceLabel}>{service.title}</Text>
               <Text style={styles.servicePrice}>₦{service.customerRatePerThousand.toLocaleString("en-NG", { minimumFractionDigits: 2 })} / 1k</Text>
             </Pressable>
@@ -66,7 +70,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { paddingTop: 12, paddingBottom: 40, gap: 0 },
+  scrollContent: { paddingTop: Platform.OS === "web" ? 12 : 22, paddingBottom: 40, gap: 0 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 28 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandMark: { width: 19, height: 22, position: "relative" },

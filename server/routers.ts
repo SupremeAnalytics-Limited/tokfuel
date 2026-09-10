@@ -8,6 +8,15 @@ import { applyTokFuelMarkup, sociallyClient } from "./socially";
 
 const giftQuantitySchema = z.number().int().min(500).refine((value) => value % 500 === 0, "Gift quantity must increase in 500-unit steps");
 
+// Customer-facing floors are intentionally separate from Socially wholesale rates.
+// Views receive a stronger floor because they are a high-volume discovery product.
+const CUSTOMER_RATE_FLOORS: Record<string, number> = {
+  followers: 7000,
+  likes: 1800,
+  views: 5000,
+  streams: 6000,
+};
+
 type PublicGiftService = {
   giftId: string;
   title: string;
@@ -22,12 +31,16 @@ type PublicGiftService = {
 
 function toPublicGift(service: Awaited<ReturnType<typeof sociallyClient.getServices>>[number]): PublicGiftService {
   const normalizedCategory = service.category.replace(/[^a-zA-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const categoryValue = `${service.category} ${service.name}`.toLowerCase();
+  const productKey = categoryValue.includes("follower") ? "followers" : categoryValue.includes("like") ? "likes" : categoryValue.includes("view") ? "views" : categoryValue.includes("stream") ? "streams" : "other";
+  const customerRatePerThousand = Math.max(applyTokFuelMarkup(service.rate), CUSTOMER_RATE_FLOORS[productKey] ?? 0);
+  const customerCategory = productKey === "followers" ? "TikTok Followers" : productKey === "likes" ? "TikTok Likes" : productKey === "views" ? "TikTok Views" : productKey === "streams" ? "TikTok Streams" : "TikTok Gifts";
   return {
     giftId: String(service.service),
-    title: normalizedCategory || "TikTok creator gift",
-    category: normalizedCategory || "TikTok services",
-    description: service.name.replace(/\r?\n/g, " · ").trim(),
-    customerRatePerThousand: applyTokFuelMarkup(service.rate),
+    title: customerCategory,
+    category: customerCategory,
+    description: productKey === "views" ? "Help a creator get discovered by more viewers." : productKey === "followers" ? "Show lasting support for a creator's community." : productKey === "likes" ? "Add encouragement to a creator's latest post." : productKey === "streams" ? "Support a creator's live moment." : normalizedCategory || "TikTok creator gift",
+    customerRatePerThousand,
     minQuantity: Math.max(500, Math.ceil(service.min / 500) * 500),
     maxQuantity: Math.floor(service.max / 500) * 500,
     refillAvailable: service.refill,

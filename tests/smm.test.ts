@@ -18,6 +18,17 @@ describe("TokFuel live gift API Suite", () => {
     expect(gifts.every((gift) => !Object.prototype.hasOwnProperty.call(gift, "service"))).toBe(true);
   }, 20000);
 
+  it("provides the four featured home categories with views priced as a high-volume product", async () => {
+    const caller = appRouter.createCaller({} as any);
+    const gifts = await caller.smm.getServices();
+    const categories = new Set(gifts.map((gift) => gift.category));
+    expect(categories.has("TikTok Followers")).toBe(true);
+    expect(categories.has("TikTok Likes")).toBe(true);
+    expect(categories.has("TikTok Views")).toBe(true);
+    expect(categories.has("TikTok Streams")).toBe(true);
+    expect(gifts.filter((gift) => gift.category === "TikTok Views").every((gift) => gift.customerRatePerThousand >= 5000)).toBe(true);
+  }, 20000);
+
   it("calculates customer gift pricing from live service data in 500-unit increments", async () => {
     const caller = appRouter.createCaller({} as any);
     const gifts = await caller.smm.getServices();
