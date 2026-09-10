@@ -4,7 +4,36 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { applyTokFuelMarkup, sociallyClient, TOKFUEL_MARKUP_PERCENT } from "./socially";
+import { applyTokFuelMarkup, sociallyClient } from "./socially";
+
+const giftQuantitySchema = z.number().int().min(500).refine((value) => value % 500 === 0, "Gift quantity must increase in 500-unit steps");
+
+type PublicGiftService = {
+  giftId: string;
+  title: string;
+  category: string;
+  description: string;
+  customerRatePerThousand: number;
+  minQuantity: number;
+  maxQuantity: number;
+  refillAvailable: boolean;
+  averageTime?: string;
+};
+
+function toPublicGift(service: Awaited<ReturnType<typeof sociallyClient.getServices>>[number]): PublicGiftService {
+  const normalizedCategory = service.category.replace(/[^a-zA-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  return {
+    giftId: String(service.service),
+    title: normalizedCategory || "TikTok creator gift",
+    category: normalizedCategory || "TikTok services",
+    description: service.name.replace(/\r?\n/g, " · ").trim(),
+    customerRatePerThousand: applyTokFuelMarkup(service.rate),
+    minQuantity: Math.max(500, Math.ceil(service.min / 500) * 500),
+    maxQuantity: Math.floor(service.max / 500) * 500,
+    refillAvailable: service.refill,
+    averageTime: service.average_time,
+  };
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -18,39 +47,33 @@ export const appRouter = router({
   }),
 
   smm: router({
-    getIntegrationStatus: publicProcedure.query(() => sociallyClient.getTokenStatus()),
-
-    getBalance: publicProcedure.query(async () => {
-      try {
-        return await sociallyClient.getAccountBalance();
-      } catch (error) {
-        throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Socially balance unavailable" });
-      }
-    }),
+    getAvailability: publicProcedure.query(() => ({ available: sociallyClient.hasToken() })),
 
     getServices: publicProcedure.query(async () => {
       try {
-        return await sociallyClient.getServices();
+        const services = await sociallyClient.getServices();
+        return services.map(toPublicGift);
       } catch (error) {
-        throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Socially services unavailable" });
+        throw new TRPCError({ code: "BAD_GATEWAY", message: "Live TikTok gifts are temporarily unavailable" });
       }
     }),
 
     calculateCost: publicProcedure
-      .input(z.object({ serviceId: z.union([z.number(), z.string()]), quantity: z.number().min(1) }))
+      .input(z.object({ giftId: z.string(), quantity: giftQuantitySchema }))
       .query(async ({ input }) => {
         try {
           const services = await sociallyClient.getServices();
-          const service = services.find((item) => String(item.service) === String(input.serviceId));
-          if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That live TikTok service is no longer available" });
-          const wholesaleTotal = Number(((service.rate / 1000) * input.quantity).toFixed(2));
-          const customerTotal = applyTokFuelMarkup(wholesaleTotal);
+          const service = services.find((item) => String(item.service) === input.giftId);
+          if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That live TikTok gift is no longer available" });
+          const gift = toPublicGift(service);
+          if (input.quantity < gift.minQuantity || input.quantity > gift.maxQuantity) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a quantity within the available gift range" });
+          }
+          const customerTotal = Number(((gift.customerRatePerThousand / 1000) * input.quantity).toFixed(2));
           return {
-            serviceId: input.serviceId,
+            giftId: gift.giftId,
             quantity: input.quantity,
-            ratePerThousand: service.rate,
-            wholesaleTotal,
-            markupPercent: TOKFUEL_MARKUP_PERCENT,
+            customerRatePerThousand: gift.customerRatePerThousand,
             customerTotal,
             totalNaira: customerTotal,
             formattedTotal: `₦${customerTotal.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
@@ -58,34 +81,34 @@ export const appRouter = router({
           };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
-          throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Live pricing unavailable" });
+          throw new TRPCError({ code: "BAD_GATEWAY", message: "Live gift pricing is temporarily unavailable" });
         }
       }),
 
     createOrder: publicProcedure
-      .input(z.object({ serviceId: z.union([z.number(), z.string()]), link: z.string().url("Please provide a valid TikTok URL"), quantity: z.number().min(1, "Quantity must be greater than zero") }))
+      .input(z.object({ giftId: z.string(), link: z.string().url("Please provide a valid TikTok URL"), quantity: giftQuantitySchema }))
       .mutation(async ({ input }) => {
         try {
           const services = await sociallyClient.getServices();
-          const service = services.find((item) => String(item.service) === String(input.serviceId));
-          if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That live TikTok service is no longer available" });
-          if (input.quantity < service.min || input.quantity > service.max) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Quantity must be between ${service.min.toLocaleString()} and ${service.max.toLocaleString()}` });
+          const service = services.find((item) => String(item.service) === input.giftId);
+          if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That live TikTok gift is no longer available" });
+          const gift = toPublicGift(service);
+          if (input.quantity < gift.minQuantity || input.quantity > gift.maxQuantity) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a quantity within the available gift range" });
           }
-          const wholesaleTotal = Number(((service.rate / 1000) * input.quantity).toFixed(2));
-          const order = await sociallyClient.createOrder({ service: input.serviceId, link: input.link, quantity: input.quantity });
+          const order = await sociallyClient.createOrder({ service: input.giftId, link: input.link, quantity: input.quantity });
           return {
-            ...order,
-            pricing: {
-              wholesaleTotal,
-              markupPercent: TOKFUEL_MARKUP_PERCENT,
-              customerTotal: applyTokFuelMarkup(wholesaleTotal),
-              currency: "NGN" as const,
-            },
+            orderId: order.order_id,
+            status: order.status,
+            link: order.link,
+            quantity: order.quantity,
+            customerTotal: Number(((gift.customerRatePerThousand / 1000) * input.quantity).toFixed(2)),
+            currency: "NGN" as const,
+            createdAt: order.createdAt,
           };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
-          throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Live order submission failed" });
+          throw new TRPCError({ code: "BAD_GATEWAY", message: "Live gift submission failed" });
         }
       }),
 
@@ -95,7 +118,7 @@ export const appRouter = router({
         try {
           return await sociallyClient.getOrderStatus(input.orderId);
         } catch (error) {
-          throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Live order status unavailable" });
+          throw new TRPCError({ code: "BAD_GATEWAY", message: "Live gift status is temporarily unavailable" });
         }
       }),
   }),

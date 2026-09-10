@@ -2,40 +2,35 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "../server/routers";
 import { applyTokFuelMarkup, TOKFUEL_MARKUP_PERCENT } from "../server/socially";
 
-describe("TokFuel live SMM API Suite", () => {
-  it("provides integration status without exposing secrets", async () => {
+describe("TokFuel live gift API Suite", () => {
+  it("exposes only a generic availability check", async () => {
     const caller = appRouter.createCaller({} as any);
-    const status = await caller.smm.getIntegrationStatus();
-
-    expect(status.baseUrl).toBe("https://socially.ng/api/v1");
-    expect(typeof status.configured).toBe("boolean");
-    expect(status).not.toHaveProperty("maskedToken");
+    const status = await caller.smm.getAvailability();
+    expect(typeof status.available).toBe("boolean");
   });
 
-  it("retrieves only live TikTok services from Socially.ng", async () => {
+  it("returns only public gift fields and hides wholesale implementation data", async () => {
     const caller = appRouter.createCaller({} as any);
-    const services = await caller.smm.getServices();
-
-    expect(services.length).toBeGreaterThan(0);
-    expect(services.every((service) => `${service.category} ${service.name}`.toLowerCase().includes("tiktok"))).toBe(true);
-    expect(services.every((service) => service.rate >= 0 && service.min >= 0 && service.max >= service.min)).toBe(true);
+    const gifts = await caller.smm.getServices();
+    expect(gifts.length).toBeGreaterThan(0);
+    expect(gifts.every((gift) => gift.giftId && gift.title && gift.customerRatePerThousand >= 0)).toBe(true);
+    expect(gifts.every((gift) => !Object.prototype.hasOwnProperty.call(gift, "rate"))).toBe(true);
+    expect(gifts.every((gift) => !Object.prototype.hasOwnProperty.call(gift, "service"))).toBe(true);
   }, 20000);
 
-  it("calculates pricing from the live Socially catalog", async () => {
+  it("calculates customer gift pricing from live service data in 500-unit increments", async () => {
     const caller = appRouter.createCaller({} as any);
-    const services = await caller.smm.getServices();
-    const service = services[0];
-    const calculation = await caller.smm.calculateCost({ serviceId: service.service, quantity: service.min });
-
-    const wholesaleTotal = Number(((service.rate / 1000) * service.min).toFixed(2));
-    expect(calculation.wholesaleTotal).toBe(wholesaleTotal);
-    expect(calculation.markupPercent).toBe(TOKFUEL_MARKUP_PERCENT);
-    expect(calculation.customerTotal).toBe(applyTokFuelMarkup(wholesaleTotal));
+    const gifts = await caller.smm.getServices();
+    const gift = gifts[0];
+    const quantity = gift.minQuantity;
+    const calculation = await caller.smm.calculateCost({ giftId: gift.giftId, quantity });
+    expect(calculation.customerTotal).toBe(Number(((gift.customerRatePerThousand / 1000) * quantity).toFixed(2)));
     expect(calculation.totalNaira).toBe(calculation.customerTotal);
-    expect(calculation.currency).toBe("NGN");
+    expect(calculation).not.toHaveProperty("wholesaleTotal");
+    expect(calculation).not.toHaveProperty("markupPercent");
   }, 20000);
 
-  it("uses an 80 percent markup, not an 80 percent gross margin", () => {
+  it("keeps the internal pricing formula at 80 percent markup", () => {
     expect(TOKFUEL_MARKUP_PERCENT).toBe(80);
     expect(applyTokFuelMarkup(100)).toBe(180);
   });

@@ -43,11 +43,10 @@ export default function HomeScreen() {
           {servicesQuery.isLoading && <Text style={styles.liveState}>Loading live TikTok services…</Text>}
           {servicesQuery.isError && <Text style={styles.liveError}>Live Socially.ng services are unavailable right now.</Text>}
           {quickServices.map((service) => {
-            const customerRate = Number((service.rate * 1.8).toFixed(2));
-            return <Pressable key={String(service.service)} style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]} onPress={() => router.push("/(tabs)/services")}>
+            return <Pressable key={service.giftId} style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]} onPress={() => router.push("/(tabs)/services")}>
               <View style={[styles.serviceIcon, { backgroundColor: "#25F4EE20" }]}><Ionicons name="gift-outline" size={22} color="#25F4EE" /></View>
-              <Text style={styles.serviceLabel}>{service.category}</Text>
-              <Text style={styles.servicePrice}>₦{customerRate.toLocaleString("en-NG", { minimumFractionDigits: 2 })} / 1k</Text>
+              <Text style={styles.serviceLabel}>{service.title}</Text>
+              <Text style={styles.servicePrice}>₦{service.customerRatePerThousand.toLocaleString("en-NG", { minimumFractionDigits: 2 })} / 1k</Text>
             </Pressable>
           })}
         </View>
