@@ -70,7 +70,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { paddingTop: Platform.OS === "web" ? 12 : 22, paddingBottom: 40, gap: 0 },
+  scrollContent: { paddingTop: 12, paddingBottom: 40, gap: 0 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 28 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandMark: { width: 19, height: 22, position: "relative" },

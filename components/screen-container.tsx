@@ -1,4 +1,4 @@
-import { View, type ViewProps } from "react-native";
+import { Platform, View, type ViewProps } from "react-native";
 import { SafeAreaView, useSafeAreaInsets, type Edge } from "react-native-safe-area-context";
 
 import { cn } from "@/lib/utils";
@@ -49,6 +49,9 @@ export function ScreenContainer({
 }: ScreenContainerProps) {
   const insets = useSafeAreaInsets();
   const safeAreaEdges = edges.filter((edge) => edge !== "top");
+  const topInset = edges.includes("top")
+    ? Math.max(insets.top, Platform.OS === "ios" ? 59 : 24)
+    : 0;
 
   return (
     <View
@@ -64,7 +67,7 @@ export function ScreenContainer({
         className={cn("flex-1", safeAreaClassName)}
         style={style}
       >
-        <View className={cn("flex-1", className)} style={edges.includes("top") ? { paddingTop: insets.top } : undefined}>{children}</View>
+        <View className={cn("flex-1", className)} style={topInset ? { paddingTop: topInset } : undefined}>{children}</View>
       </SafeAreaView>
     </View>
   );
