@@ -5,23 +5,14 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
-
-const QUICK_SERVICES = [
-  { id: "followers", label: "Followers", icon: "people-outline" as const, color: "#FE2C55", price: "From ₦1,250" },
-  { id: "views", label: "Video views", icon: "play-outline" as const, color: "#25F4EE", price: "From ₦28.50" },
-  { id: "likes", label: "Likes", icon: "heart-outline" as const, color: "#FF7393", price: "From ₦185" },
-  { id: "shares", label: "Shares", icon: "share-social-outline" as const, color: "#A98CFF", price: "From ₦45" },
-];
-
-const ORDERS = [
-  { id: "TOK-9024852", title: "Video views", subtitle: "5,000 views · 1 video", progress: 76, status: "In progress", color: "#25F4EE" },
-  { id: "TOK-9024851", title: "Real followers", subtitle: "1,000 followers · @lagos_fashion_hub", progress: 100, status: "Completed", color: "#31D158" },
-];
+import { trpc } from "@/lib/trpc";
 
 export default function HomeScreen() {
   const router = useRouter();
   const colors = useColors();
   const [link, setLink] = useState("");
+  const servicesQuery = trpc.smm.getServices.useQuery();
+  const quickServices = (servicesQuery.data ?? []).slice(0, 4);
 
   return (
     <ScreenContainer className="px-5" containerClassName="bg-background">
@@ -49,13 +40,16 @@ export default function HomeScreen() {
 
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Gift categories</Text><Pressable onPress={() => router.push("/(tabs)/services")}><Text style={styles.viewAll}>See all</Text></Pressable></View>
         <View style={styles.quickGrid}>
-          {QUICK_SERVICES.map((service) => (
-            <Pressable key={service.id} style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]} onPress={() => router.push("/(tabs)/services")}>
-              <View style={[styles.serviceIcon, { backgroundColor: `${service.color}20` }]}><Ionicons name={service.icon} size={22} color={service.color} /></View>
-              <Text style={styles.serviceLabel}>{service.label}</Text>
-              <Text style={styles.servicePrice}>{service.price}</Text>
+          {servicesQuery.isLoading && <Text style={styles.liveState}>Loading live TikTok services…</Text>}
+          {servicesQuery.isError && <Text style={styles.liveError}>Live Socially.ng services are unavailable right now.</Text>}
+          {quickServices.map((service) => {
+            const customerRate = Number((service.rate * 1.8).toFixed(2));
+            return <Pressable key={String(service.service)} style={({ pressed }) => [styles.serviceCard, pressed && styles.cardPressed]} onPress={() => router.push("/(tabs)/services")}>
+              <View style={[styles.serviceIcon, { backgroundColor: "#25F4EE20" }]}><Ionicons name="gift-outline" size={22} color="#25F4EE" /></View>
+              <Text style={styles.serviceLabel}>{service.category}</Text>
+              <Text style={styles.servicePrice}>₦{customerRate.toLocaleString("en-NG", { minimumFractionDigits: 2 })} / 1k</Text>
             </Pressable>
-          ))}
+          })}
         </View>
 
         <View style={styles.linkCard}>
@@ -65,12 +59,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Recent gifts</Text><Pressable onPress={() => router.push("/(tabs)/orders")}><Text style={styles.viewAll}>View all</Text></Pressable></View>
-        {ORDERS.map((order) => (
-          <Pressable key={order.id} style={styles.orderCard} onPress={() => router.push("/(tabs)/orders")}>
-            <View style={[styles.orderIcon, { backgroundColor: `${order.color}18` }]}><Ionicons name={order.status === "Completed" ? "checkmark-circle-outline" : "trending-up-outline"} color={order.color} size={21} /></View>
-            <View style={styles.orderInfo}><View style={styles.orderTop}><Text style={styles.orderTitle}>{order.title}</Text><Text style={[styles.orderStatus, { color: order.color }]}>{order.status}</Text></View><Text style={styles.orderSubtitle}>{order.subtitle}</Text><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${order.progress}%`, backgroundColor: order.color }]} /></View></View>
-          </Pressable>
-        ))}
+        <View style={styles.orderCard}><View style={[styles.orderIcon, { backgroundColor: "#25F4EE18" }]}><Ionicons name="cloud-download-outline" color="#25F4EE" size={21} /></View><View style={styles.orderInfo}><Text style={styles.orderTitle}>Live orders appear here</Text><Text style={styles.orderSubtitle}>After you send a service gift through Socially.ng.</Text></View></View>
         <View style={styles.trustRow}><Ionicons name="shield-checkmark-outline" size={16} color="#31D158" /><Text style={styles.trustText}>Transparent gift cards · Secure checkout · Delivery tracking</Text></View>
       </ScrollView>
     </ScreenContainer>
@@ -105,6 +94,8 @@ const styles = StyleSheet.create({
   serviceIcon: { width: 39, height: 39, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 13 },
   serviceLabel: { color: "#F8FAFC", fontSize: 14, fontWeight: "700" },
   servicePrice: { color: "#858594", fontSize: 11, marginTop: 5 },
+  liveState: { color: "#9CA3AF", fontSize: 12, paddingVertical: 12 },
+  liveError: { color: "#FFB6C5", fontSize: 12, paddingVertical: 12 },
   linkCard: { backgroundColor: "#15151C", borderRadius: 19, padding: 17, borderWidth: 1, borderColor: "#272733", marginBottom: 28 },
   linkCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 15 },
   linkTitle: { color: "#F8FAFC", fontSize: 15, fontWeight: "800" },

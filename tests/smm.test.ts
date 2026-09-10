@@ -1,63 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "../server/routers";
-import { VERIFIED_TIKTOK_SERVICES } from "../server/socially";
+import { applyTokFuelMarkup, TOKFUEL_MARKUP_PERCENT } from "../server/socially";
 
-describe("TokFuel SMM API Suite", () => {
+describe("TokFuel live SMM API Suite", () => {
   it("provides integration status without exposing secrets", async () => {
     const caller = appRouter.createCaller({} as any);
     const status = await caller.smm.getIntegrationStatus();
-    
-    expect(status).toBeDefined();
+
     expect(status.baseUrl).toBe("https://socially.ng/api/v1");
     expect(typeof status.configured).toBe("boolean");
-    // Token must never be fully exposed
-    if (status.maskedToken) {
-      expect(status.maskedToken).toContain("••••");
-    }
+    expect(status).not.toHaveProperty("maskedToken");
   });
 
-  it("retrieves curated Nigerian TikTok growth services", async () => {
+  it("retrieves only live TikTok services from Socially.ng", async () => {
     const caller = appRouter.createCaller({} as any);
     const services = await caller.smm.getServices();
 
-    expect(services.length).toBeGreaterThanOrEqual(5);
-    const followerService = services.find((s) => s.category.includes("FOLLOWER"));
-    expect(followerService).toBeDefined();
-    expect(followerService?.rate).toBeGreaterThan(0);
-  });
+    expect(services.length).toBeGreaterThan(0);
+    expect(services.every((service) => `${service.category} ${service.name}`.toLowerCase().includes("tiktok"))).toBe(true);
+    expect(services.every((service) => service.rate >= 0 && service.min >= 0 && service.max >= service.min)).toBe(true);
+  }, 20000);
 
-  it("correctly computes Naira charges for different quantities", async () => {
+  it("calculates pricing from the live Socially catalog", async () => {
     const caller = appRouter.createCaller({} as any);
-    
-    // Service 125: Followers at ₦1,250 per 1,000
-    const calc1k = await caller.smm.calculateCost({
-      serviceId: 125,
-      quantity: 1000,
-    });
-    expect(calc1k.totalNaira).toBe(1250);
-    expect(calc1k.formattedTotal).toContain("1,250");
+    const services = await caller.smm.getServices();
+    const service = services[0];
+    const calculation = await caller.smm.calculateCost({ serviceId: service.service, quantity: service.min });
 
-    // Service 123: Views at ₦28.50 per 1,000 -> 10,000 views = ₦285.00
-    const calc10kViews = await caller.smm.calculateCost({
-      serviceId: 123,
-      quantity: 10000,
-    });
-    expect(calc10kViews.totalNaira).toBe(285);
-  });
+    const wholesaleTotal = Number(((service.rate / 1000) * service.min).toFixed(2));
+    expect(calculation.wholesaleTotal).toBe(wholesaleTotal);
+    expect(calculation.markupPercent).toBe(TOKFUEL_MARKUP_PERCENT);
+    expect(calculation.customerTotal).toBe(applyTokFuelMarkup(wholesaleTotal));
+    expect(calculation.totalNaira).toBe(calculation.customerTotal);
+    expect(calculation.currency).toBe("NGN");
+  }, 20000);
 
-  it("creates an order and lists it in session tracking", async () => {
-    const caller = appRouter.createCaller({} as any);
-    const newOrder = await caller.smm.createOrder({
-      serviceId: 123,
-      link: "https://www.tiktok.com/@testcreator/video/123456789",
-      quantity: 2000,
-    });
-
-    expect(newOrder.order_id).toBeDefined();
-    expect(newOrder.status).toBe("in_progress");
-    expect(newOrder.quantity).toBe(2000);
-
-    const orders = await caller.smm.listOrders();
-    expect(orders.some((o) => o.order_id === newOrder.order_id)).toBe(true);
+  it("uses an 80 percent markup, not an 80 percent gross margin", () => {
+    expect(TOKFUEL_MARKUP_PERCENT).toBe(80);
+    expect(applyTokFuelMarkup(100)).toBe(180);
   });
 });

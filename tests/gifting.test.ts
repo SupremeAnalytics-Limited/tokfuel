@@ -17,7 +17,7 @@ describe("TokFuel gifting product contract", () => {
     const services = fs.readFileSync(path.join(appRoot, "app/(tabs)/services.tsx"), "utf8");
     expect(home).toContain("creator gift");
     expect(home).toContain("Who are you gifting?");
-    expect(services).toContain("Choose a gift");
-    expect(services).toContain("No buying followers");
+    expect(services).toContain("Choose a service gift");
+    expect(services).toContain("Live data only");
   });
 });

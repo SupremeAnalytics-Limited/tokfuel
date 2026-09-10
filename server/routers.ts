@@ -2,8 +2,9 @@ import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { sociallyClient, VERIFIED_TIKTOK_SERVICES } from "./socially";
+import { applyTokFuelMarkup, sociallyClient, TOKFUEL_MARKUP_PERCENT } from "./socially";
 
 export const appRouter = router({
   system: systemRouter,
@@ -12,85 +13,91 @@ export const appRouter = router({
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
 
-  // TokFuel SMM Router
   smm: router({
-    // Get integration & API key status
-    getIntegrationStatus: publicProcedure.query(() => {
-      return sociallyClient.getTokenStatus();
-    }),
+    getIntegrationStatus: publicProcedure.query(() => sociallyClient.getTokenStatus()),
 
-    // Get upstream balance & currency
     getBalance: publicProcedure.query(async () => {
-      return await sociallyClient.getAccountBalance();
+      try {
+        return await sociallyClient.getAccountBalance();
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Socially balance unavailable" });
+      }
     }),
 
-    // Get TikTok services catalog
     getServices: publicProcedure.query(async () => {
-      return await sociallyClient.getServices();
+      try {
+        return await sociallyClient.getServices();
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Socially services unavailable" });
+      }
     }),
 
-    // Calculate exact pricing in Naira
     calculateCost: publicProcedure
-      .input(
-        z.object({
-          serviceId: z.union([z.number(), z.string()]),
-          quantity: z.number().min(1),
-        })
-      )
-      .query(({ input }) => {
-        const service = VERIFIED_TIKTOK_SERVICES.find(
-          (s) => String(s.service) === String(input.serviceId)
-        );
-        const ratePerThousand = service ? service.rate : 100;
-        const totalNaira = Number(((ratePerThousand / 1000) * input.quantity).toFixed(2));
-        return {
-          serviceId: input.serviceId,
-          quantity: input.quantity,
-          ratePerThousand,
-          totalNaira,
-          formattedTotal: `₦${totalNaira.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
-          currency: "NGN",
-        };
-      }),
-
-    // Create a new SMM fulfillment order
-    createOrder: publicProcedure
-      .input(
-        z.object({
-          serviceId: z.union([z.number(), z.string()]),
-          link: z.string().url("Please provide a valid TikTok URL (profile or video)"),
-          quantity: z.number().min(10, "Minimum quantity is 10"),
-        })
-      )
-      .mutation(async ({ input }) => {
-        return await sociallyClient.createOrder({
-          service: input.serviceId,
-          link: input.link,
-          quantity: input.quantity,
-        });
-      }),
-
-    // Check status of an existing order
-    getOrderStatus: publicProcedure
-      .input(
-        z.object({
-          orderId: z.string(),
-        })
-      )
+      .input(z.object({ serviceId: z.union([z.number(), z.string()]), quantity: z.number().min(1) }))
       .query(async ({ input }) => {
-        return await sociallyClient.getOrderStatus(input.orderId);
+        try {
+          const services = await sociallyClient.getServices();
+          const service = services.find((item) => String(item.service) === String(input.serviceId));
+          if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That live TikTok service is no longer available" });
+          const wholesaleTotal = Number(((service.rate / 1000) * input.quantity).toFixed(2));
+          const customerTotal = applyTokFuelMarkup(wholesaleTotal);
+          return {
+            serviceId: input.serviceId,
+            quantity: input.quantity,
+            ratePerThousand: service.rate,
+            wholesaleTotal,
+            markupPercent: TOKFUEL_MARKUP_PERCENT,
+            customerTotal,
+            totalNaira: customerTotal,
+            formattedTotal: `₦${customerTotal.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
+            currency: "NGN",
+          };
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Live pricing unavailable" });
+        }
       }),
 
-    // List recent orders
-    listOrders: publicProcedure.query(async () => {
-      return await sociallyClient.listOrders();
-    }),
+    createOrder: publicProcedure
+      .input(z.object({ serviceId: z.union([z.number(), z.string()]), link: z.string().url("Please provide a valid TikTok URL"), quantity: z.number().min(1, "Quantity must be greater than zero") }))
+      .mutation(async ({ input }) => {
+        try {
+          const services = await sociallyClient.getServices();
+          const service = services.find((item) => String(item.service) === String(input.serviceId));
+          if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That live TikTok service is no longer available" });
+          if (input.quantity < service.min || input.quantity > service.max) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Quantity must be between ${service.min.toLocaleString()} and ${service.max.toLocaleString()}` });
+          }
+          const wholesaleTotal = Number(((service.rate / 1000) * input.quantity).toFixed(2));
+          const order = await sociallyClient.createOrder({ service: input.serviceId, link: input.link, quantity: input.quantity });
+          return {
+            ...order,
+            pricing: {
+              wholesaleTotal,
+              markupPercent: TOKFUEL_MARKUP_PERCENT,
+              customerTotal: applyTokFuelMarkup(wholesaleTotal),
+              currency: "NGN" as const,
+            },
+          };
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Live order submission failed" });
+        }
+      }),
+
+    getOrderStatus: publicProcedure
+      .input(z.object({ orderId: z.string() }))
+      .query(async ({ input }) => {
+        try {
+          return await sociallyClient.getOrderStatus(input.orderId);
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_GATEWAY", message: error instanceof Error ? error.message : "Live order status unavailable" });
+        }
+      }),
   }),
 });
 
