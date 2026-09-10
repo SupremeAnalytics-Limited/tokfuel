@@ -23,4 +23,25 @@ describe("Socially.ng live credential", () => {
     expect(body[0]).toHaveProperty("service");
     expect(body[0]).toHaveProperty("category");
   }, 20000);
+
+  it("returns the live Socially account balance in NGN", async () => {
+    const token = process.env.SOCIALLY_API_TOKEN;
+    expect(token).toBeTruthy();
+
+    const form = new FormData();
+    form.append("key", token as string);
+    form.append("action", "balance");
+    const response = await fetch("https://socially.ng/api/v1", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: form,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    expect(response.ok).toBe(true);
+    const body = await response.json();
+    expect(body.status).toBe("success");
+    expect(body.currency).toBe("NGN");
+    expect(body).toHaveProperty("balance");
+  }, 20000);
 });

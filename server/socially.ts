@@ -49,6 +49,7 @@ export interface SociallyOrderResult {
     customerTotal: number;
     currency: "NGN";
   };
+  message?: string;
   createdAt: string;
 }
 
@@ -145,10 +146,16 @@ export class SociallyApiClient {
 
     return {
       order_id: String(orderId),
-      status: "pending",
-      link: params.link,
-      quantity: params.quantity,
+      charge: parseNumber(body?.charge),
+      status: String(body?.status ?? "processing"),
+      link: String(body?.link ?? params.link),
+      quantity: body?.quantity ?? params.quantity,
       currency: "NGN",
+      service: {
+        name: body?.service_name ? String(body.service_name) : undefined,
+        category: body?.category_name ? String(body.category_name) : undefined,
+      },
+      message: body?.message ? String(body.message) : undefined,
       createdAt: new Date().toISOString(),
     };
   }
@@ -168,6 +175,23 @@ export class SociallyApiClient {
       quantity: body.quantity ?? 0,
       service: body.service,
       createdAt: new Date().toISOString(),
+    };
+  }
+
+  async getRefillStatus(orderId: string): Promise<{ order: string; refill_status: string }> {
+    const body = await this.postForm("refill_status", { order: orderId }) as any;
+    return {
+      order: String(body?.order ?? orderId),
+      refill_status: String(body?.refill_status ?? "unknown"),
+    };
+  }
+
+  async requestRefill(orderId: string): Promise<{ order: string; refill_status: string; message?: string }> {
+    const body = await this.postForm("refill", { order: orderId }) as any;
+    return {
+      order: String(body?.order ?? orderId),
+      refill_status: String(body?.refill_status ?? "processing"),
+      message: body?.message ? String(body.message) : undefined,
     };
   }
 
