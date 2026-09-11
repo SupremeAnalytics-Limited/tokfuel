@@ -50,5 +50,12 @@ describe("TokFuel gifting product contract", () => {
     expect(oauth).toContain("VITE_OAUTH_PORTAL_URL");
     expect(oauth).toContain("VITE_APP_ID");
     expect(oauth).toContain('getOAuthUrl("signUp")');
+    expect(oauth).toContain('`${env.deepLinkScheme}://oauth/callback`');
+  });
+
+  it("keeps the root stack declarative to avoid update-depth loops", () => {
+    const layout = fs.readFileSync(path.join(appRoot, "app/_layout.tsx"), "utf8");
+    expect(layout).toContain('initialRouteName="onboarding"');
+    expect(layout).not.toContain('router.replace("/onboarding")');
   });
 });

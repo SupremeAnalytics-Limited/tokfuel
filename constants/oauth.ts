@@ -23,7 +23,7 @@ export function getApiBaseUrl(): string { if (API_BASE_URL) return API_BASE_URL.
 export const SESSION_TOKEN_KEY = "app_session_token";
 export const USER_INFO_KEY = "manus-runtime-user-info";
 const encodeState = (value: string) => { if (typeof globalThis.btoa === "function") return globalThis.btoa(value); const BufferImpl = (globalThis as Record<string, any>).Buffer; return BufferImpl ? BufferImpl.from(value, "utf-8").toString("base64") : value; };
-export const getRedirectUri = () => ReactNative.Platform.OS === "web" ? `${getApiBaseUrl()}/api/oauth/callback` : Linking.createURL("/oauth/callback", { scheme: env.deepLinkScheme });
+export const getRedirectUri = () => ReactNative.Platform.OS === "web" ? `${getApiBaseUrl()}/api/oauth/callback` : `${env.deepLinkScheme}://oauth/callback`;
 export const getOAuthUrl = (type: "signIn" | "signUp" = "signIn") => { if (!OAUTH_PORTAL_URL || !APP_ID) throw new Error("TokFuel sign-in is not configured for this build. Please reload the app or contact support."); const redirectUri = getRedirectUri(); const url = new URL(`${OAUTH_PORTAL_URL}/app-auth`); url.searchParams.set("appId", APP_ID); url.searchParams.set("redirectUri", redirectUri); url.searchParams.set("state", encodeState(redirectUri)); url.searchParams.set("type", type); return url.toString(); };
 export const getLoginUrl = () => getOAuthUrl("signIn");
 export const getCreateAccountUrl = () => getOAuthUrl("signUp");
