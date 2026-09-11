@@ -65,6 +65,8 @@ function parseNumber(value: unknown, fallback = 0): number {
 export class SociallyApiClient {
   private readonly baseUrl = "https://socially.ng/api/v1";
   private readonly token: string | null;
+  private servicesCache: { expiresAt: number; value: SociallyService[] } | null = null;
+  private servicesPromise: Promise<SociallyService[]> | null = null;
 
   constructor(token?: string) {
     this.token = token || process.env.SOCIALLY_API_TOKEN || null;
@@ -111,25 +113,29 @@ export class SociallyApiClient {
   }
 
   async getServices(): Promise<SociallyService[]> {
-    const body = await this.postForm("services");
-    if (!Array.isArray(body)) {
-      throw new Error("Socially API returned an invalid services response");
-    }
-
-    return body
-      .filter((item: any) => `${item?.category ?? ""} ${item?.name ?? ""}`.toLowerCase().includes("tiktok"))
-      .map((item: any) => ({
-        service: item.service,
-        name: String(item.name ?? "TikTok service"),
-        type: String(item.type ?? "default"),
-        category: String(item.category ?? "TikTok services"),
-        rate: parseNumber(item.rate),
-        min: parseNumber(item.min),
-        max: parseNumber(item.max),
-        refill: parseBoolean(item.refill),
-        cancel: parseBoolean(item.cancel),
-        average_time: item.average_time ? String(item.average_time) : undefined,
-      }));
+    if (this.servicesCache && this.servicesCache.expiresAt > Date.now()) return this.servicesCache.value;
+    if (this.servicesPromise) return this.servicesPromise;
+    this.servicesPromise = (async () => {
+      const body = await this.postForm("services");
+      if (!Array.isArray(body)) throw new Error("Socially API returned an invalid services response");
+      const services = body
+        .filter((item: any) => `${item?.category ?? ""} ${item?.name ?? ""}`.toLowerCase().includes("tiktok"))
+        .map((item: any) => ({
+          service: item.service,
+          name: String(item.name ?? "TikTok service"),
+          type: String(item.type ?? "default"),
+          category: String(item.category ?? "TikTok services"),
+          rate: parseNumber(item.rate),
+          min: parseNumber(item.min),
+          max: parseNumber(item.max),
+          refill: parseBoolean(item.refill),
+          cancel: parseBoolean(item.cancel),
+          average_time: item.average_time ? String(item.average_time) : undefined,
+        }));
+      this.servicesCache = { expiresAt: Date.now() + 30_000, value: services };
+      return services;
+    })();
+    try { return await this.servicesPromise; } finally { this.servicesPromise = null; }
   }
 
   async createOrder(params: CreateOrderParams): Promise<SociallyOrderResult> {

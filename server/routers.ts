@@ -5,7 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { applyTokFuelMarkup, sociallyClient } from "./socially";
-import { calculatePaystackFee, getRefundWallet, initializePurchase, verifyAndFulfilPurchase } from "./payment-flow";
+import { getRefundWallet, initializePurchase, verifyAndFulfilPurchase } from "./payment-flow";
 
 const giftQuantitySchema = z.number().int().min(500).refine((value) => value % 500 === 0, "Gift quantity must increase in 500-unit steps");
 
@@ -101,14 +101,12 @@ export const appRouter = router({
             throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a quantity within the available gift range" });
           }
             const serviceAmount = Number(((gift.customerRatePerThousand / 1000) * input.quantity).toFixed(2));
-            const processingFee = calculatePaystackFee(serviceAmount);
-            const customerTotal = Number((serviceAmount + processingFee).toFixed(2));
+            const customerTotal = serviceAmount;
             return {
             giftId: gift.giftId,
             quantity: input.quantity,
             customerRatePerThousand: gift.customerRatePerThousand,
               serviceAmount,
-              processingFee,
               customerTotal,
             totalNaira: customerTotal,
             formattedTotal: `₦${customerTotal.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
