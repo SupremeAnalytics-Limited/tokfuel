@@ -39,4 +39,16 @@ describe("TokFuel gifting product contract", () => {
     expect(services).toContain("useLocalSearchParams");
     expect(services).toContain("gift.category === category");
   });
+
+  it("provides separate account creation and login actions", () => {
+    const onboarding = fs.readFileSync(path.join(appRoot, "app/onboarding.tsx"), "utf8");
+    const oauth = fs.readFileSync(path.join(appRoot, "constants/oauth.ts"), "utf8");
+    expect(onboarding).toContain("Create account");
+    expect(onboarding).toContain("Log in");
+    expect(onboarding).toContain("startOAuthCreateAccount");
+    expect(onboarding).toContain("isAuthenticated");
+    expect(oauth).toContain("VITE_OAUTH_PORTAL_URL");
+    expect(oauth).toContain("VITE_APP_ID");
+    expect(oauth).toContain('getOAuthUrl("signUp")');
+  });
 });

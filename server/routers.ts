@@ -5,7 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { applyTokFuelMarkup, sociallyClient } from "./socially";
-import { getRefundWallet, initializePurchase, verifyAndFulfilPurchase } from "./payment-flow";
+import { calculatePaystackFee, getRefundWallet, initializePurchase, verifyAndFulfilPurchase } from "./payment-flow";
 
 const giftQuantitySchema = z.number().int().min(500).refine((value) => value % 500 === 0, "Gift quantity must increase in 500-unit steps");
 
@@ -28,6 +28,7 @@ type PublicGiftService = {
   maxQuantity: number;
   refillAvailable: boolean;
   averageTime?: string;
+  unitLabel: string;
 };
 
 function toPublicGift(service: Awaited<ReturnType<typeof sociallyClient.getServices>>[number]): PublicGiftService {
@@ -36,6 +37,7 @@ function toPublicGift(service: Awaited<ReturnType<typeof sociallyClient.getServi
   const productKey = categoryValue.includes("follower") ? "followers" : categoryValue.includes("like") ? "likes" : categoryValue.includes("view") ? "views" : categoryValue.includes("stream") ? "streams" : "other";
   const customerRatePerThousand = Math.max(applyTokFuelMarkup(service.rate), CUSTOMER_RATE_FLOORS[productKey] ?? 0);
   const customerCategory = productKey === "followers" ? "TikTok Followers" : productKey === "likes" ? "TikTok Likes" : productKey === "views" ? "TikTok Views" : productKey === "streams" ? "TikTok Streams" : "TikTok Gifts";
+  const unitLabel = productKey === "followers" ? "Followers" : productKey === "likes" ? "Likes" : productKey === "views" ? "Views" : productKey === "streams" ? "Streams" : "Units";
   const tierLabel = service.refill ? "Refill available" : "Standard delivery";
   const deliveryLabel = service.average_time ? `Typical start: ${service.average_time}` : "Typical start time varies";
   return {
@@ -48,6 +50,7 @@ function toPublicGift(service: Awaited<ReturnType<typeof sociallyClient.getServi
     maxQuantity: Math.floor(service.max / 500) * 500,
     refillAvailable: service.refill,
     averageTime: service.average_time,
+    unitLabel,
   };
 }
 
@@ -97,15 +100,20 @@ export const appRouter = router({
           if (input.quantity < gift.minQuantity || input.quantity > gift.maxQuantity) {
             throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a quantity within the available gift range" });
           }
-          const customerTotal = Number(((gift.customerRatePerThousand / 1000) * input.quantity).toFixed(2));
-          return {
+            const serviceAmount = Number(((gift.customerRatePerThousand / 1000) * input.quantity).toFixed(2));
+            const processingFee = calculatePaystackFee(serviceAmount);
+            const customerTotal = Number((serviceAmount + processingFee).toFixed(2));
+            return {
             giftId: gift.giftId,
             quantity: input.quantity,
             customerRatePerThousand: gift.customerRatePerThousand,
-            customerTotal,
+              serviceAmount,
+              processingFee,
+              customerTotal,
             totalNaira: customerTotal,
             formattedTotal: `₦${customerTotal.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
-            currency: "NGN",
+              currency: "NGN",
+              unitLabel: gift.unitLabel,
           };
         } catch (error) {
           if (error instanceof TRPCError) throw error;

@@ -8,6 +8,12 @@ function makeReference() {
   return `tokfuel_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`;
 }
 
+export function calculatePaystackFee(serviceAmount: number): number {
+  const percentage = serviceAmount * 0.015;
+  const flat = serviceAmount >= 2500 ? 100 : 0;
+  return Number(Math.min(2000, percentage + flat).toFixed(2));
+}
+
 function normaliseOrderStatus(status: string) {
   const value = status.toLowerCase();
   if (["failed", "error", "canceled", "cancelled"].includes(value)) return "failed";
@@ -20,12 +26,14 @@ export async function initializePurchase(input: { email: string; giftId: string;
   const service = services.find((item) => String(item.service) === input.giftId);
   if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That gift is no longer available" });
   const customerRatePerThousand = Math.max(Number((service.rate * 1.8).toFixed(2)), service.category.toLowerCase().includes("view") ? 5000 : service.category.toLowerCase().includes("stream") ? 6000 : service.category.toLowerCase().includes("follower") ? 7000 : service.category.toLowerCase().includes("like") ? 1800 : 0);
-  const customerAmount = Number(((customerRatePerThousand / 1000) * input.quantity).toFixed(2));
+  const serviceAmount = Number(((customerRatePerThousand / 1000) * input.quantity).toFixed(2));
+  const processingFee = calculatePaystackFee(serviceAmount);
+  const customerAmount = Number((serviceAmount + processingFee).toFixed(2));
   const reference = makeReference();
   await createPaymentTransaction({ reference, customerEmail: input.email, giftId: input.giftId, link: input.link, quantity: input.quantity, customerAmount: customerAmount.toFixed(2), paystackStatus: "initialized", orderStatus: "awaiting_payment", refundStatus: "not_applicable" });
   try {
     const payment = await initializePaystackTransaction({ email: input.email, amountNaira: customerAmount, reference, callbackUrl: input.callbackUrl, metadata: { reference, giftId: input.giftId, quantity: input.quantity } });
-    return { ...payment, customerAmount, currency: "NGN" as const };
+    return { ...payment, serviceAmount, processingFee, customerAmount, currency: "NGN" as const };
   } catch (error) {
     await updatePaymentTransaction(reference, { paystackStatus: "initialization_failed", orderStatus: "failed", refundStatus: "not_applicable" });
     throw new TRPCError({ code: "BAD_GATEWAY", message: "Secure payment could not be initialized" });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "../server/routers";
 import { applyTokFuelMarkup, TOKFUEL_MARKUP_PERCENT } from "../server/socially";
+import { calculatePaystackFee } from "../server/payment-flow";
 
 describe("TokFuel live gift API Suite", () => {
   it("exposes only a generic availability check", async () => {
@@ -35,7 +36,9 @@ describe("TokFuel live gift API Suite", () => {
     const gift = gifts[0];
     const quantity = gift.minQuantity;
     const calculation = await caller.smm.calculateCost({ giftId: gift.giftId, quantity });
-    expect(calculation.customerTotal).toBe(Number(((gift.customerRatePerThousand / 1000) * quantity).toFixed(2)));
+    expect(calculation.serviceAmount).toBe(Number(((gift.customerRatePerThousand / 1000) * quantity).toFixed(2)));
+    expect(calculation.processingFee).toBe(calculatePaystackFee(calculation.serviceAmount));
+    expect(calculation.customerTotal).toBe(Number((calculation.serviceAmount + calculation.processingFee).toFixed(2)));
     expect(calculation.totalNaira).toBe(calculation.customerTotal);
     expect(calculation).not.toHaveProperty("wholesaleTotal");
     expect(calculation).not.toHaveProperty("markupPercent");
@@ -44,5 +47,11 @@ describe("TokFuel live gift API Suite", () => {
   it("keeps the internal pricing formula at 80 percent markup", () => {
     expect(TOKFUEL_MARKUP_PERCENT).toBe(80);
     expect(applyTokFuelMarkup(100)).toBe(180);
+  });
+
+  it("uses the Nigerian Paystack fee rules transparently", () => {
+    expect(calculatePaystackFee(1000)).toBe(15);
+    expect(calculatePaystackFee(3000)).toBe(145);
+    expect(calculatePaystackFee(200000)).toBe(2000);
   });
 });
